@@ -84,7 +84,7 @@
       "පූර්ව ප්‍රාතමික ශ්‍රේණි වල පන්ති කාමර පිරිසිදු කර සකස් කිරීම.",
       "බුද්ද වන්දනා වැඩසටහන පැවැත්වෙන ස්ථානය හා බෝදි මලුව ඇමදීම.",
       "මල් ආසන හා සෑ රදුන් අබියස පිරිසිදු කොට පිලියෙල කිරීම.",
-      "සම්බුද්ධ පූජාවට අවශය පූජා හොදින් සෝදා පිලියෙල කිරීම.",
+      "සම්බුද්ධ පූජාවට අවශය පූජා හොදින් සෝඩා පිලියෙල කිරීම.",
       "පූජා ද්‍රව්‍ය ගෙන ආ ලමුන් සටහන් කර ගැනීම.",
       "බුද්ද වන්දනාවට අවශ්‍ය ශබ්ද විකාශන යන්ත්‍ර සකස් කර ගැනීම.",
       "බුද්ද වන්දනාවට වැඩම කරන ස්වාමින් වහන්සේගේ ආසනයට සුදු රෙද්දක් දැමීම.",
@@ -122,6 +122,7 @@
       "සතිමත් බවින් යුතුව ගුරුවරුන් නැමද දහම් පාසලින් පිටත් වීම."
     ];
 
+    // Names (as you provided)
     const specialNames = ["ෆර්හාන් හක්", "වරන විරොචන", "සෙනුත් දින්සර", "මනුත් ඩිහෙන්", "දිනෙත් දම්සර"];
     const otherNames = [
       "යොමාලි නෙත්මිනි", "මිතුනි කවිශා", "සිදංගනා දම්සිලුනි", "දැහැමි නෙත්සරා",
@@ -130,48 +131,223 @@
     ];
     const allNames = specialNames.concat(otherNames);
 
-    const setA = [11,14, 27, 29, 32, 35];
-    const setB = [3,4, 5, 6, 7, 8, 9,13, 25,26,28,30,37, 39, 40];
-    const setC = [1, 2, 15, 16, 18, 20, 21, 22, 23, 24, 32, 33, 34, 36, 38, 41, 42, 43, 44];
+    // Your groups (kept the original indices as provided)
+    const setA = [11, 14, 27, 29, 32, 35]; // indices used to assign specialNames fairly
+    const setB = [3, 4, 5, 6, 7, 8, 9, 13, 25, 26, 28, 30, 37, 39, 40]; // indices where two names are assigned
+    const setC = [1, 2, 15, 16, 18, 20, 21, 22, 23, 24, 32, 33, 34, 36, 38, 41, 42, 43, 44]; // fixed-name indices
+
+    // fixed text for Set C
     const fixedName = "සියලු ශිෂ්‍ය නායක නායිකාවන්";
 
-    function shuffle(arr) {
-      let a = arr.slice(), m = a.length, t, i;
-      while (m) {
-        i = Math.floor(Math.random() * m--);
-        t = a[m]; a[m] = a[i]; a[i] = t;
+    // Helper: Fisher-Yates shuffle
+    function shuffleArray(a) {
+      const arr = a.slice();
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
       }
-      return a;
+      return arr;
     }
 
-    function getRandomNames(pool, count = 1) {
-      const shuffled = shuffle(pool);
-      return shuffled.slice(0, count);
+    // Helper: create a cycling generator for an array (fair rotation)
+    function createCycle(arr) {
+      let pool = shuffleArray(arr);
+      return function next() {
+        if (pool.length === 0) pool = shuffleArray(arr);
+        return pool.shift();
+      };
+    }
+
+    // Utility to pick least-used name respecting an exclude set and "locked" names
+    function pickLeastUsedName(usageMap, exclude = new Set()) {
+      // Build list of candidates
+      const candidates = allNames.filter(n => !exclude.has(n));
+      // Sort by usage count (ascending)
+      candidates.sort((a, b) => (usageMap[a] || 0) - (usageMap[b] || 0));
+      // Return first candidate (lowest usage)
+      return candidates.length ? candidates[0] : null;
     }
 
     function shuffleAndRender() {
       const tbody = document.getElementById("taskTableBody");
       tbody.innerHTML = "";
 
+      // Prepare assignments array
       const assignments = new Array(sentences.length).fill("");
 
-      assignments[0] = "ෆර්හාන් හක්";
+      // Usage tracker for fairness
+      const usage = {};
+      function incUsage(name) { usage[name] = (usage[name] || 0) + 1; }
 
-      const shuffledSetAIndexes = shuffle(setA);
-      const shuffledSpecials = shuffle(specialNames);
-      for (let i = 0; i < shuffledSetAIndexes.length; i++) {
-        assignments[shuffledSetAIndexes[i]] = shuffledSpecials[i % shuffledSpecials.length];
+      // 1) Sentence 1 fixed to "ෆර්හාන් හක්" (index 0)
+      assignments[0] = "ෆර්හාන් හක්";
+      incUsage("ෆර්හාන් හක්");
+
+      // 2) Set C -> fixedName
+      setC.forEach(idx => {
+        if (idx >= 0 && idx < assignments.length) {
+          assignments[idx] = fixedName;
+        }
+      });
+
+      // 3) Special rotation for Set A (ensure fair use of specialNames)
+      // We'll allow specialNames to be used in setA in a cycle (includes ෆර්හාන් හක්)
+      const nextSpecial = createCycle(specialNames);
+      // But we must ensure we don't accidentally override fixed entries (e.g., if an index is in setC)
+      setA.forEach(idx => {
+        if (idx >= 0 && idx < assignments.length && !assignments[idx]) {
+          const name = nextSpecial();
+          assignments[idx] = name;
+          incUsage(name);
+        }
+      });
+
+      // 4) Special restriction: if the bag-check sentence (index 4) is in setB — we must assign it two names
+      //    and lock them until the 7:25 sentence (index 14) occurs.
+      // Find if index 4 is in setB; if not present, treat index 4 specially anyway because user wanted it.
+      const bagIdx = 4; // "ශිෂ්‍යයන්ගේ බෑග් පරීක්ෂාව." is index 4 (0-based)
+      const sevenTwentyFiveIdx = 14; // "පෙ.ව 7.25 සීනුව නාද කිරීම." is index 14 (0-based)
+
+      // We'll prepare pair pools for setB: list of possible pairs, and used pairs.
+      function pairKey(a, b) {
+        // normalized key for pair (order-insensitive)
+        return [a, b].sort().join(" | ");
       }
 
-      setB.forEach(idx => {
-        const [n1, n2] = getRandomNames(allNames, 2);
-        assignments[idx] = `${n1}, ${n2}`;
-      });
+      // Build a pool of possible pairs (all combinations of two different names)
+      const allPairs = [];
+      for (let i = 0; i < allNames.length; i++) {
+        for (let j = i + 1; j < allNames.length; j++) {
+          allPairs.push([allNames[i], allNames[j]]);
+        }
+      }
 
-      setC.forEach(idx => {
-        assignments[idx] = fixedName;
-      });
+      // Shuffle pairs for variety, but we'll pick by usage preference later
+      let availablePairs = shuffleArray(allPairs.slice());
+      const usedPairKeys = new Set();
 
+      // Locked names from bag-check (to be excluded from other assignments until sevenTwentyFiveIdx is reached)
+      let lockedNames = new Set();
+
+      // Helper: choose a pair for an index with constraints (exclude locked usage if index < sevenTwentyFiveIdx)
+      function choosePairForIndex(idx, excludeNames = new Set()) {
+        // Prefer pairs where both names are not in excludeNames and minimize usages
+        // Build candidate pairs filtered
+        const candidates = availablePairs.filter(pair => {
+          const [a, b] = pair;
+          if (excludeNames.has(a) || excludeNames.has(b)) return false;
+          return true;
+        });
+
+        if (candidates.length === 0) {
+          // if no candidates remain (rare), regenerate from allPairs excluding used pairs and excluded names
+          availablePairs = shuffleArray(allPairs.filter(pair => {
+            const k = pairKey(pair[0], pair[1]);
+            if (usedPairKeys.has(k)) return false;
+            if (excludeNames.has(pair[0]) || excludeNames.has(pair[1])) return false;
+            return true;
+          }));
+        }
+
+        // After filtering, pick pair that minimizes combined usage
+        let best = null;
+        let bestScore = Infinity;
+        const pool = candidates.length ? candidates : availablePairs;
+        for (const pair of pool) {
+          const [a, b] = pair;
+          const score = (usage[a] || 0) + (usage[b] || 0);
+          // also prefer pairs not yet used
+          const usedPenalty = usedPairKeys.has(pairKey(a, b)) ? 1000 : 0;
+          const total = score + usedPenalty + Math.random() * 0.1; // small random tiebreak
+          if (total < bestScore) {
+            bestScore = total;
+            best = pair;
+          }
+        }
+
+        if (!best) {
+          // fallback: random pair ignoring excludeNames (shouldn't happen normally)
+          best = allPairs[Math.floor(Math.random() * allPairs.length)];
+        }
+
+        // Mark pair as used
+        const k = pairKey(best[0], best[1]);
+        usedPairKeys.add(k);
+        // also remove from availablePairs so we avoid immediate reuse
+        availablePairs = availablePairs.filter(p => pairKey(p[0], p[1]) !== k);
+
+        // increment usage counters
+        incUsage(best[0]);
+        incUsage(best[1]);
+
+        return best;
+      }
+
+      // 5) Assign pairs for setB in index order, but ensure that the bagIdx pair gets locked
+      //    and locked names aren't used elsewhere before sevenTwentyFiveIdx.
+      // We'll iterate through setB sorted ascending index so locking works correctly.
+      const setBsorted = setB.slice().filter(i => i >= 0 && i < sentences.length).sort((a, b) => a - b);
+
+      for (const idx of setBsorted) {
+        if (assignments[idx]) continue; // skip if already assigned (e.g., setC or setA)
+        // Determine exclude set for this pick:
+        const exclude = new Set();
+        // If idx < sevenTwentyFiveIdx, we must exclude lockedNames (they are reserved)
+        if (idx < sevenTwentyFiveIdx) {
+          lockedNames.forEach(n => exclude.add(n));
+        }
+        // Also exclude any fixedName (shouldn't be in allNames) but kept for safety
+        exclude.add(fixedName);
+
+        // If this is the bagIdx (4) — choose pair, assign, then lock them
+        if (idx === bagIdx) {
+          const pair = choosePairForIndex(idx, exclude);
+          assignments[idx] = `${pair[0]}, ${pair[1]}`;
+          // lock these names until sevenTwentyFiveIdx has passed
+          lockedNames.add(pair[0]);
+          lockedNames.add(pair[1]);
+          // continue (we already incUsage in choosePairForIndex)
+          continue;
+        }
+
+        // For other indices: pick pair avoiding locked names when before sevenTwentyFiveIdx
+        const pair = choosePairForIndex(idx, exclude);
+        assignments[idx] = `${pair[0]}, ${pair[1]}`;
+      }
+
+      // 6) Now assign remaining sentences (not setA, not setB, not setC, not sentence 0)
+      // We'll do this in index order and respect lockedNames until sevenTwentyFiveIdx.
+      for (let idx = 0; idx < sentences.length; idx++) {
+        if (assignments[idx]) {
+          // Special handling: once we pass the sevenTwentyFiveIdx, we release locked names
+          if (idx === sevenTwentyFiveIdx) {
+            lockedNames = new Set(); // unlock them now (names can be used again)
+          }
+          continue;
+        }
+        // Pick one name for this slot, avoiding locked names if idx < sevenTwentyFiveIdx
+        const exclude = new Set();
+        if (idx < sevenTwentyFiveIdx) lockedNames.forEach(n => exclude.add(n));
+        exclude.add(fixedName);
+
+        const name = pickLeastUsedName(usage, exclude);
+        if (name) {
+          assignments[idx] = name;
+          incUsage(name);
+        } else {
+          // fallback: choose any name at random (shouldn't occur)
+          const randomName = allNames[Math.floor(Math.random() * allNames.length)];
+          assignments[idx] = randomName;
+          incUsage(randomName);
+        }
+
+        // Release locked names if we're exactly at sevenTwentyFiveIdx (they can be reused afterwards)
+        if (idx === sevenTwentyFiveIdx) {
+          lockedNames = new Set();
+        }
+      }
+
+      // Final guard: ensure every sentence has an assignment (if any left unfilled)
       for (let i = 0; i < sentences.length; i++) {
         if (!assignments[i]) {
           const name = allNames[Math.floor(Math.random() * allNames.length)];
@@ -179,6 +355,7 @@
         }
       }
 
+      // Render table rows
       sentences.forEach((task, idx) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${idx + 1}</td><td>${task}</td><td>${assignments[idx]}</td>`;
@@ -186,11 +363,9 @@
       });
     }
 
+    // Run once on load
     shuffleAndRender();
   </script>
 
 </body>
 </html>
-
-
-
